@@ -50,7 +50,7 @@ function activeRound(person, reservations) {
 function header() {
   return `<header class="topbar">
     <a class="brand" href="#/"><span class="mark">CR</span><span>Catawba Ridge Theatre</span></a>
-    <nav><a href="#/">All calendars</a><a class="pill" href="#/login">Sign in or sign up</a></nav>
+    <nav><a href="#/">All calendars</a><a class="pill create-link" href="#/login">Sign in or sign up to create a calendar</a></nav>
   </header>`;
 }
 
@@ -75,14 +75,24 @@ function calendarGrid(person, managing = false) {
 }
 
 async function home() {
+  const previewDays = Array.from({ length: 21 }, (_, index) => `<span>${index + 1}</span>`).join("");
   app.innerHTML = `${header()}<main><section class="hero">
     <div><p class="eyebrow">CATAWBA RIDGE THEATRE PRESENTS</p><h1>Every day can<br>make a <em>difference.</em></h1>
     <p class="lead">Choose a participant, sponsor an open April date, and complete the donation securely through the official theatre payment page.</p>
-    <a class="button" href="#fundraisers">Choose a fundraiser →</a></div>
-    <div class="hero-card"><span>APRIL</span><strong>30</strong><em>days to make a difference</em></div>
-  </section><section id="fundraisers" class="fundraisers"><p class="eyebrow">OUR FUNDRAISERS</p><h2>Who will you support?</h2><div class="cards" id="cards"><p>Loading calendars…</p></div></section></main>${footer()}`;
+    <div class="hero-actions"><a class="button" href="#fundraisers">Choose a fundraiser →</a><a class="how-link" href="#how">See how it works</a></div></div>
+    <div class="preview-card"><div class="preview-month"><span>APRIL</span><strong>2027</strong></div><div class="preview-days">${previewDays}<b>♥</b></div><p>pick a day<br><em>change a life!</em></p></div>
+  </section>
+  <section class="impact-strip"><div><strong id="raised-together">—</strong><span>raised together</span></div><div><strong id="active-calendars">—</strong><span>active calendars</span></div><div><strong id="ways-to-help">—</strong><span>ways to help</span></div></section>
+  <section id="fundraisers" class="fundraisers"><p class="eyebrow">OUR FUNDRAISERS</p><h2>Who will you support?</h2><div class="cards" id="cards"><p>Loading calendars…</p></div></section>
+  <section id="how" class="how-section"><p class="eyebrow">HOW IT WORKS</p><h2>Pick a day.<br><em>Change a life.</em></h2><div class="how-steps"><article><b>01</b><h3>Choose a fundraiser</h3><p>Select the participant you want to support.</p></article><article><b>02</b><h3>Pick an April date</h3><p>The date number is the donation amount. Open dates are ready to choose.</p></article><article><b>03</b><h3>Complete payment</h3><p>You’ll be sent to Catawba Ridge Theatre’s official Ludus page.</p></article></div><a class="button" href="#/login">Sign in or sign up to create a calendar →</a></section>
+  </main>${footer()}`;
   try {
     const people = await loadPeople();
+    const totalRaised = people.reduce((sum, person) => sum + Number(person.raised || 0), 0);
+    const availableDates = people.reduce((sum, person) => sum + (30 - person.sponsored.length), 0);
+    document.querySelector("#raised-together").textContent = `$${totalRaised.toLocaleString()}`;
+    document.querySelector("#active-calendars").textContent = people.length;
+    document.querySelector("#ways-to-help").textContent = availableDates;
     document.querySelector("#cards").innerHTML = people.map((person) => {
       const percent = Math.min(100, Math.round(person.raised / person.goal * 100));
       return `<a class="person" href="#/calendar/${person.slug}">
