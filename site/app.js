@@ -32,17 +32,20 @@ function getSession() {
 async function loadPeople() {
   const [people, days] = await Promise.all([
     request("rest/v1/participants?select=id,slug,name,initials,color,raised,goal&active=eq.true&order=display_order"),
-    request("rest/v1/sponsored_days?select=participant_id,day,round"),
+    request("rest/v1/sponsored_days?select=participant_id,day,amount,round"),
   ]);
   return people.map((person) => activeRound(person, days.filter((item) => item.participant_id === person.id)));
 }
 
 function activeRound(person, reservations) {
-  let round = 1;
-  while (reservations.filter((item) => item.round === round).length >= 30) round += 1;
+  let round = Math.max(1, ...reservations.map((item) => item.round));
+  if (reservations.filter((item) => item.round === round).length >= 30) round += 1;
+  const reservedTotal = reservations.reduce((sum, item) => sum + Number(item.amount || item.day), 0);
   return {
     ...person,
     round,
+    raised: Math.max(Number(person.raised || 0), reservedTotal),
+    goal: Math.max(Number(person.goal || 465), round * 465),
     sponsored: reservations.filter((item) => item.round === round).map((item) => item.day),
   };
 }
@@ -223,7 +226,7 @@ async function dashboard() {
       return;
     }
     const person = calendars[0];
-    const reservedDays = await request(`rest/v1/sponsored_days?select=day,round&participant_id=eq.${person.id}`, {}, true);
+    const reservedDays = await request(`rest/v1/sponsored_days?select=day,amount,round&participant_id=eq.${person.id}`, {}, true);
     Object.assign(person, activeRound(person, reservedDays));
     document.querySelector("#dashboard-content").innerHTML = `<div class="dashboard-actions"><a class="button" href="#/calendar/${person.slug}">View public calendar →</a><p>Click a day after its Ludus payment is confirmed. Click it again to reopen the day.</p></div>${calendarGrid(person, true)}<p id="dash-message"></p>`;
     document.querySelectorAll(".days button").forEach((button) => button.addEventListener("click", async () => {
