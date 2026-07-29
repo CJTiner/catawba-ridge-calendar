@@ -43,7 +43,7 @@ async function loadPeople() {
 function header() {
   return `<header class="topbar">
     <a class="brand" href="#/"><span class="mark">CR</span><span>Catawba Ridge Theatre</span></a>
-    <nav><a href="#/">All calendars</a><a class="pill" href="#/login">Calendar owner login</a></nav>
+    <nav><a href="#/">All calendars</a><a class="pill" href="#/login">Sign in or sign up</a></nav>
   </header>`;
 }
 
@@ -190,16 +190,22 @@ async function dashboard() {
     document.querySelectorAll(".days button").forEach((button) => button.addEventListener("click", async () => {
       const day = Number(button.dataset.day);
       const paid = person.sponsored.includes(day);
+      button.disabled = true;
       try {
         if (paid) {
           await request(`rest/v1/sponsored_days?participant_id=eq.${person.id}&day=eq.${day}`, { method: "DELETE" }, true);
           person.sponsored = person.sponsored.filter((item) => item !== day);
         } else {
-          await request("rest/v1/sponsored_days", { method: "POST", body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: true }) }, true);
+          await request("rest/v1/sponsored_days?on_conflict=participant_id,day", {
+            method: "POST",
+            headers: { Prefer: "resolution=merge-duplicates" },
+            body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: true }),
+          }, true);
           person.sponsored.push(day);
         }
         dashboard();
       } catch (error) {
+        button.disabled = false;
         document.querySelector("#dash-message").textContent = error.message;
       }
     }));
