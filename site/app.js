@@ -50,7 +50,7 @@ function activeRound(person, reservations) {
 function header() {
   return `<header class="topbar">
     <a class="brand" href="#/"><span class="mark">CR</span><span>Catawba Ridge Theatre</span></a>
-    <nav><a href="#/">All calendars</a><a class="pill create-link" href="#/login">Sign in or sign up to create a calendar</a></nav>
+    <nav><a href="#/">All calendars</a><a class="pill create-link" href="#/login">Create calendar</a></nav>
   </header>`;
 }
 
@@ -84,7 +84,7 @@ async function home() {
   </section>
   <section class="impact-strip"><div><strong id="raised-together">—</strong><span>raised together</span></div><div><strong id="active-calendars">—</strong><span>active calendars</span></div><div><strong id="ways-to-help">—</strong><span>ways to help</span></div></section>
   <section id="fundraisers" class="fundraisers"><p class="eyebrow">OUR FUNDRAISERS</p><h2>Who will you support?</h2><div class="cards" id="cards"><p>Loading calendars…</p></div></section>
-  <section id="how" class="how-section"><p class="eyebrow">HOW IT WORKS</p><h2>Pick a day.<br><em>Change a life.</em></h2><div class="how-steps"><article><b>01</b><h3>Choose a fundraiser</h3><p>Select the participant you want to support.</p></article><article><b>02</b><h3>Pick an April date</h3><p>The date number is the donation amount. Open dates are ready to choose.</p></article><article><b>03</b><h3>Complete payment</h3><p>You’ll be sent to Catawba Ridge Theatre’s official Ludus page.</p></article></div><a class="button" href="#/login">Sign in or sign up to create a calendar →</a></section>
+  <section id="how" class="how-section"><p class="eyebrow">HOW IT WORKS</p><h2>Pick a day.<br><em>Change a life.</em></h2><div class="how-steps"><article><b>01</b><h3>Choose a fundraiser</h3><p>Select the participant you want to support.</p></article><article><b>02</b><h3>Pick an April date</h3><p>The date number is the donation amount. Open dates are ready to choose.</p></article><article><b>03</b><h3>Complete payment</h3><p>You’ll be sent to Catawba Ridge Theatre’s official Ludus page.</p></article></div><a class="button" href="#/login">Create calendar →</a></section>
   </main>${footer()}`;
   try {
     const people = await loadPeople();
@@ -120,6 +120,8 @@ async function personalCalendar(slug) {
     document.querySelectorAll(".days button:not(:disabled)").forEach((button) => {
       button.addEventListener("click", async () => {
         const day = Number(button.dataset.day);
+        const paymentTab = window.open("about:blank", "_blank");
+        if (paymentTab) paymentTab.opener = null;
         button.disabled = true;
         document.querySelector("#payment-note").innerHTML = `<div class="notice">Reserving day ${day} and opening Ludus…</div>`;
         try {
@@ -127,8 +129,14 @@ async function personalCalendar(slug) {
             method: "POST",
             body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: false, round: person.round }),
           });
-          window.location.assign(LUDUS_URL);
+          if (paymentTab) {
+            paymentTab.location.href = LUDUS_URL;
+            document.querySelector("#payment-note").innerHTML = `<div class="notice">Day ${day} is reserved. Ludus opened in a new tab.</div>`;
+          } else {
+            document.querySelector("#payment-note").innerHTML = `<div class="notice">Day ${day} is reserved. <a href="${LUDUS_URL}" target="_blank" rel="noreferrer">Open Ludus in a new tab →</a></div>`;
+          }
         } catch (error) {
+          if (paymentTab) paymentTab.close();
           button.disabled = false;
           document.querySelector("#payment-note").innerHTML = `<p class="error">${error.message}</p>`;
         }
