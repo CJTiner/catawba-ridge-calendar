@@ -32,7 +32,7 @@ function getSession() {
 async function loadPeople() {
   const [people, days] = await Promise.all([
     request("rest/v1/participants?select=id,slug,name,initials,color,raised,goal&active=eq.true&order=display_order"),
-    request("rest/v1/sponsored_days?select=participant_id,day&paid=eq.true"),
+    request("rest/v1/sponsored_days?select=participant_id,day"),
   ]);
   return people.map((person) => ({
     ...person,
@@ -57,7 +57,7 @@ function calendarGrid(person, managing = false) {
     const day = index + 1;
     const paid = person.sponsored.includes(day);
     return `<button data-day="${day}" class="${paid ? "sponsored" : ""}" ${!managing && paid ? "disabled" : ""}>
-      <b>${day}</b><small>${paid ? "♥ Sponsored" : `$${day}`}</small>
+      <b>${day}</b><small>${paid ? "♥ Taken" : `$${day}`}</small>
     </button>`;
   }).join("");
   return `<div class="calendar">
@@ -101,10 +101,21 @@ async function personalCalendar(slug) {
       <section>${calendarGrid(person)}<div id="payment-note"></div></section>
     </main>${footer()}`;
     document.querySelectorAll(".days button:not(:disabled)").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const day = Number(button.dataset.day);
-        document.querySelector("#payment-note").innerHTML = `<div class="notice">Day ${day} selected · Complete the $${day} donation on Ludus. <a href="${LUDUS_URL}" target="_blank" rel="noreferrer">Open payment page →</a></div>`;
-        window.open(LUDUS_URL, "_blank", "noopener,noreferrer");
+        button.disabled = true;
+        document.querySelector("#payment-note").innerHTML = `<div class="notice">Reserving day ${day} and opening Ludus…</div>`;
+        try {
+          await request("rest/v1/sponsored_days?on_conflict=participant_id,day", {
+            method: "POST",
+            headers: { Prefer: "resolution=ignore-duplicates" },
+            body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: false }),
+          });
+          window.location.assign(LUDUS_URL);
+        } catch (error) {
+          button.disabled = false;
+          document.querySelector("#payment-note").innerHTML = `<p class="error">${error.message}</p>`;
+        }
       });
     });
   } catch (error) {
@@ -230,7 +241,7 @@ async function admin() {
     if (!adminRows.length) throw new Error("This account does not have administrator access.");
     const [people, paidDays] = await Promise.all([
       request("rest/v1/participants?select=id,name,slug&active=eq.true&order=display_order"),
-      request("rest/v1/sponsored_days?select=participant_id,day&paid=eq.true&order=day", {}, true),
+      request("rest/v1/sponsored_days?select=participant_id,day&order=day", {}, true),
     ]);
     document.querySelector("#admin-content").innerHTML = people.map((person) => {
       const days = paidDays.filter((item) => item.participant_id === person.id);
