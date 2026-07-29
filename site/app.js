@@ -32,12 +32,19 @@ function getSession() {
 async function loadPeople() {
   const [people, days] = await Promise.all([
     request("rest/v1/participants?select=id,slug,name,initials,color,raised,goal&active=eq.true&order=display_order"),
-    request("rest/v1/sponsored_days?select=participant_id,day"),
+    request("rest/v1/sponsored_days?select=participant_id,day,round"),
   ]);
-  return people.map((person) => ({
+  return people.map((person) => activeRound(person, days.filter((item) => item.participant_id === person.id)));
+}
+
+function activeRound(person, reservations) {
+  let round = 1;
+  while (reservations.filter((item) => item.round === round).length >= 30) round += 1;
+  return {
     ...person,
-    sponsored: days.filter((item) => item.participant_id === person.id).map((item) => item.day),
-  }));
+    round,
+    sponsored: reservations.filter((item) => item.round === round).map((item) => item.day),
+  };
 }
 
 function header() {
@@ -60,8 +67,8 @@ function calendarGrid(person, managing = false) {
       <b>${day}</b><small>${paid ? "♥ Taken" : `$${day}`}</small>
     </button>`;
   }).join("");
-  return `<div class="calendar">
-    <div class="month"><span></span><h2>April <em>2027</em></h2><span></span></div>
+  return `<div class="calendar ${person.round > 1 ? "encore" : ""}">
+    <div class="month"><span>${person.round > 1 ? `ENCORE ROUND ${person.round}` : ""}</span><h2>April <em>2027</em></h2><span></span></div>
     <div class="weekdays">${weekdays.map((day) => `<span>${day}</span>`).join("")}</div>
     <div class="days">${blanks}${days}</div>
   </div>`;
@@ -106,10 +113,10 @@ async function personalCalendar(slug) {
         button.disabled = true;
         document.querySelector("#payment-note").innerHTML = `<div class="notice">Reserving day ${day} and opening Ludus…</div>`;
         try {
-          await request("rest/v1/sponsored_days?on_conflict=participant_id,day", {
+          await request("rest/v1/sponsored_days?on_conflict=participant_id,day,round", {
             method: "POST",
             headers: { Prefer: "resolution=ignore-duplicates" },
-            body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: false }),
+            body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: false, round: person.round }),
           });
           window.location.assign(LUDUS_URL);
         } catch (error) {
@@ -199,8 +206,8 @@ async function dashboard() {
       return;
     }
     const person = calendars[0];
-    const paidDays = await request(`rest/v1/sponsored_days?select=day&participant_id=eq.${person.id}&paid=eq.true`, {}, true);
-    person.sponsored = paidDays.map((item) => item.day);
+    const reservedDays = await request(`rest/v1/sponsored_days?select=day,round&participant_id=eq.${person.id}`, {}, true);
+    Object.assign(person, activeRound(person, reservedDays));
     document.querySelector("#dashboard-content").innerHTML = `<div class="dashboard-actions"><a class="button" href="#/calendar/${person.slug}">View public calendar →</a><p>Click a day after its Ludus payment is confirmed. Click it again to reopen the day.</p></div>${calendarGrid(person, true)}<p id="dash-message"></p>`;
     document.querySelectorAll(".days button").forEach((button) => button.addEventListener("click", async () => {
       const day = Number(button.dataset.day);
@@ -208,13 +215,13 @@ async function dashboard() {
       button.disabled = true;
       try {
         if (paid) {
-          await request(`rest/v1/sponsored_days?participant_id=eq.${person.id}&day=eq.${day}`, { method: "DELETE" }, true);
+          await request(`rest/v1/sponsored_days?participant_id=eq.${person.id}&day=eq.${day}&round=eq.${person.round}`, { method: "DELETE" }, true);
           person.sponsored = person.sponsored.filter((item) => item !== day);
         } else {
-          await request("rest/v1/sponsored_days?on_conflict=participant_id,day", {
+          await request("rest/v1/sponsored_days?on_conflict=participant_id,day,round", {
             method: "POST",
             headers: { Prefer: "resolution=merge-duplicates" },
-            body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: true }),
+            body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: true, round: person.round }),
           }, true);
           person.sponsored.push(day);
         }
@@ -241,18 +248,29 @@ async function admin() {
     if (!adminRows.length) throw new Error("This account does not have administrator access.");
     const [people, paidDays] = await Promise.all([
       request("rest/v1/participants?select=id,name,slug&active=eq.true&order=display_order"),
-      request("rest/v1/sponsored_days?select=participant_id,day&order=day", {}, true),
+      request("rest/v1/sponsored_days?select=participant_id,day,round&order=round,day", {}, true),
     ]);
     document.querySelector("#admin-content").innerHTML = people.map((person) => {
       const days = paidDays.filter((item) => item.participant_id === person.id);
-      return `<section class="admin-person"><div><h2>${person.name}</h2><a href="#/calendar/${person.slug}">View public calendar →</a></div><div class="admin-days">${days.length ? days.map((item) => `<button class="admin-day" data-person="${person.id}" data-day="${item.day}">Day ${item.day} · Reopen</button>`).join("") : "<span>No sponsored dates</span>"}</div></section>`;
+      return `<section class="admin-person"><div><h2>${person.name}</h2><a href="#/calendar/${person.slug}">View public calendar →</a><button class="delete-calendar" data-person="${person.id}" data-name="${person.name}">Delete calendar</button></div><div class="admin-days">${days.length ? days.map((item) => `<button class="admin-day" data-person="${person.id}" data-day="${item.day}" data-round="${item.round}">Round ${item.round} · Day ${item.day} · Reopen</button>`).join("") : "<span>No reserved dates</span>"}</div></section>`;
     }).join("");
     document.querySelectorAll(".admin-day").forEach((button) => button.addEventListener("click", async () => {
       const day = Number(button.dataset.day);
       if (!window.confirm(`Reopen day ${day}? It will become available on the public calendar.`)) return;
       button.disabled = true;
       try {
-        await request(`rest/v1/sponsored_days?participant_id=eq.${button.dataset.person}&day=eq.${day}`, { method: "DELETE" }, true);
+        await request(`rest/v1/sponsored_days?participant_id=eq.${button.dataset.person}&day=eq.${day}&round=eq.${button.dataset.round}`, { method: "DELETE" }, true);
+        admin();
+      } catch (error) {
+        button.disabled = false;
+        window.alert(error.message);
+      }
+    }));
+    document.querySelectorAll(".delete-calendar").forEach((button) => button.addEventListener("click", async () => {
+      if (!window.confirm(`Permanently delete ${button.dataset.name}'s calendar and all of its reserved dates?`)) return;
+      button.disabled = true;
+      try {
+        await request(`rest/v1/participants?id=eq.${button.dataset.person}`, { method: "DELETE" }, true);
         admin();
       } catch (error) {
         button.disabled = false;
