@@ -20,8 +20,8 @@ async function request(path, options = {}, authenticated = false) {
     const problem = await response.json().catch(() => ({}));
     throw new Error(problem.msg || problem.message || problem.error_description || "Something went wrong");
   }
-  if (response.status === 204) return null;
-  return response.json();
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
 
 function getSession() {
@@ -159,13 +159,17 @@ function login() {
 async function dashboard() {
   const session = getSession();
   if (!session) return login();
-  app.innerHTML = `${header()}<main class="dashboard"><div class="dash-head"><div><p class="eyebrow">YOUR CALENDAR DASHBOARD</p><h1>Your April<br><em>calendar.</em></h1></div><button class="pill" id="signout">Sign out</button></div><div id="dashboard-content"><p>Loading…</p></div></main>`;
+  app.innerHTML = `${header()}<main class="dashboard"><div class="dash-head"><div><p class="eyebrow">YOUR CALENDAR DASHBOARD</p><h1>Your April<br><em>calendar.</em></h1></div><div class="account-actions" id="account-actions"><button class="pill" id="signout">Sign out</button></div></div><div id="dashboard-content"><p>Loading…</p></div></main>`;
   document.querySelector("#signout").addEventListener("click", async () => {
     await request("auth/v1/logout", { method: "POST" }, true).catch(() => {});
     localStorage.removeItem(SESSION_KEY);
     location.hash = "#/";
   });
   try {
+    const adminRows = await request(`rest/v1/calendar_admins?select=user_id&user_id=eq.${session.user.id}`, {}, true);
+    if (adminRows.length) {
+      document.querySelector("#account-actions").insertAdjacentHTML("afterbegin", `<a class="button" href="#/admin">Admin controls</a>`);
+    }
     const calendars = await request(`rest/v1/participants?select=id,slug,name,initials,raised,goal&owner_id=eq.${session.user.id}`, {}, true);
     if (!calendars[0]) {
       document.querySelector("#dashboard-content").innerHTML = `<section class="setup"><h2>Create your calendar</h2><form id="name-form"><label>Your full name<input id="name" required></label><p id="setup-message"></p><button class="button">Create my calendar</button></form></section>`;
@@ -214,11 +218,47 @@ async function dashboard() {
   }
 }
 
+async function admin() {
+  const session = getSession();
+  if (!session) {
+    location.hash = "#/login";
+    return;
+  }
+  app.innerHTML = `${header()}<main class="dashboard admin"><div class="dash-head"><div><p class="eyebrow">ADMINISTRATOR</p><h1>All calendar<br><em>controls.</em></h1></div><a class="pill" href="#/dashboard">My dashboard</a></div><p class="lead">Use these controls to reopen a date when its payment was not completed.</p><div id="admin-content"><p>Loading calendars…</p></div></main>`;
+  try {
+    const adminRows = await request(`rest/v1/calendar_admins?select=user_id&user_id=eq.${session.user.id}`, {}, true);
+    if (!adminRows.length) throw new Error("This account does not have administrator access.");
+    const [people, paidDays] = await Promise.all([
+      request("rest/v1/participants?select=id,name,slug&active=eq.true&order=display_order"),
+      request("rest/v1/sponsored_days?select=participant_id,day&paid=eq.true&order=day", {}, true),
+    ]);
+    document.querySelector("#admin-content").innerHTML = people.map((person) => {
+      const days = paidDays.filter((item) => item.participant_id === person.id);
+      return `<section class="admin-person"><div><h2>${person.name}</h2><a href="#/calendar/${person.slug}">View public calendar →</a></div><div class="admin-days">${days.length ? days.map((item) => `<button class="admin-day" data-person="${person.id}" data-day="${item.day}">Day ${item.day} · Reopen</button>`).join("") : "<span>No sponsored dates</span>"}</div></section>`;
+    }).join("");
+    document.querySelectorAll(".admin-day").forEach((button) => button.addEventListener("click", async () => {
+      const day = Number(button.dataset.day);
+      if (!window.confirm(`Reopen day ${day}? It will become available on the public calendar.`)) return;
+      button.disabled = true;
+      try {
+        await request(`rest/v1/sponsored_days?participant_id=eq.${button.dataset.person}&day=eq.${day}`, { method: "DELETE" }, true);
+        admin();
+      } catch (error) {
+        button.disabled = false;
+        window.alert(error.message);
+      }
+    }));
+  } catch (error) {
+    document.querySelector("#admin-content").innerHTML = `<p class="error">${error.message}</p>`;
+  }
+}
+
 function route() {
   const path = location.hash.replace(/^#/, "") || "/";
   if (path.startsWith("/calendar/")) return personalCalendar(path.split("/")[2]);
   if (path === "/login") return login();
   if (path === "/dashboard") return dashboard();
+  if (path === "/admin") return admin();
   return home();
 }
 
