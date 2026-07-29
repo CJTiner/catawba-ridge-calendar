@@ -1,0 +1,51 @@
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-person {
+  display: grid;
+  grid-template-columns: minmax(190px, .35fr) 1fr;
+  gap: 30px;
+  padding: 25px 0;
+  border-top: 1px solid var(--line);
+}
+
+.admin-person h2 {
+  margin: 0 0 8px;
+}
+
+.admin-days {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-day {
+  border: 0;
+  background: var(--green);
+  color: #fff;
+  padding: 12px 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.admin-day:hover {
+  background: #932d20;
+}
+
+.admin-day:disabled {
+  opacity: .5;
+}
+
+@media (max-width: 800px) {
+  .account-actions {
+    flex-wrap: wrap;
+  }
+
+  .admin-person {
+    grid-template-columns: 1fr;
+  }
+}
