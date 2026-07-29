@@ -113,9 +113,8 @@ async function personalCalendar(slug) {
         button.disabled = true;
         document.querySelector("#payment-note").innerHTML = `<div class="notice">Reserving day ${day} and opening Ludus…</div>`;
         try {
-          await request("rest/v1/sponsored_days?on_conflict=participant_id,day,round", {
+          await request("rest/v1/sponsored_days", {
             method: "POST",
-            headers: { Prefer: "resolution=ignore-duplicates" },
             body: JSON.stringify({ participant_id: person.id, day, amount: day, paid: false, round: person.round }),
           });
           window.location.assign(LUDUS_URL);
